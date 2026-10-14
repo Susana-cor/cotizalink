@@ -678,7 +678,7 @@ input, select, textarea, button { font-size: 16px; } /* prevent iOS zoom on focu
       <div class="login-error" id="loginError"></div>
       <button type="button" class="login-btn" id="loginBtn" onclick="handleLogin()">Iniciar Sesión</button>
     </div>
-    <div class="login-footer">ICU Servicios · S.C.P V3 · v2026.10.14c</div>
+    <div class="login-footer">ICU Servicios · S.C.P V3 · v2026.10.14d</div>
   </div>
 </div>
 
@@ -1327,7 +1327,7 @@ async function sbRpc(fn,args){
   var j=null; try{ j=await r.json(); }catch(e){}
   if(!r.ok){
     var msg=(j&&(j.message||j.hint))||('Error '+r.status);
-    if(r.status===404) msg='Falta instalar la función '+fn+' en Supabase (archivo paso_extra_'+(fn==='rename_product'?'renombrar_producto':'renombrar')+'.sql).';
+    if(r.status===404) msg='Falta instalar la función '+fn+' en Supabase (archivo paso_extra_'+({rename_product:'renombrar_producto',move_product:'editar_producto'}[fn]||'renombrar')+'.sql).';
     throw new Error(msg);
   }
   return j;
@@ -4230,7 +4230,9 @@ function adminStartEdit(btn,brand,cat,idx){
   // Photo cell - show current + file input
   var curImg=item.img?`<img src="${item.img}" class="thumb-xs" style="margin-bottom:4px"><br>`:'';
   cells[0].innerHTML=curImg+`<input type="file" accept="image/*" id="editImg_${idx}" style="font-size:10px;width:80px">`;
-  // Replace name cell with input
+  // Brand / category / name inputs
+  cells[1].innerHTML=`<input type="text" class="input" value="${esc(brand)}" id="editBrand_${idx}" list="brandList" style="width:100%;min-width:90px;padding:4px 8px;font-size:13px">`;
+  cells[2].innerHTML=`<input type="text" class="input" value="${esc(cat)}" id="editCat_${idx}" list="catList" style="width:100%;min-width:110px;padding:4px 8px;font-size:13px">`;
   cells[3].innerHTML=`<input type="text" class="input" value="${esc(item.n)}" id="editName_${idx}" style="width:100%;padding:4px 8px;font-size:13px">`;
   // Replace price cell with input
   cells[4].innerHTML=`<input type="number" class="input" value="${item.p}" id="editPrice_${idx}" step="0.01" min="0" style="width:100%;padding:4px 8px;font-size:13px;font-family:'Space Grotesk'">`;
@@ -4245,43 +4247,60 @@ function adminStartEdit(btn,brand,cat,idx){
 function adminSaveEdit(brand,cat,idx){
   const nameEl=document.getElementById('editName_'+idx);
   const priceEl=document.getElementById('editPrice_'+idx);
+  const brandEl=document.getElementById('editBrand_'+idx);
+  const catEl=document.getElementById('editCat_'+idx);
   const imgInput=document.getElementById('editImg_'+idx);
   if(!nameEl||!priceEl) return;
   const newName=nameEl.value.trim();
+  const newBrand=brandEl?brandEl.value.trim():brand;
+  const newCat=catEl?catEl.value.trim():cat;
   const p=parseFloat(priceEl.value);
-  if(!newName||isNaN(p)||p<0){
-    showAdminMsg('adminProdMsg','Datos inválidos.','error');
+  if(!newName||!newBrand||!newCat||isNaN(p)||p<0){
+    showAdminMsg('adminProdMsg','Marca, categoría, nombre y precio son obligatorios.','error');
     return;
   }
-  if(newName.indexOf('|')>=0){ showAdminMsg('adminProdMsg','El nombre no puede contener el carácter |','error'); return; }
+  if((newName+newBrand+newCat).indexOf('|')>=0){ showAdminMsg('adminProdMsg','Marca, categoría y nombre no pueden contener el carácter |','error'); return; }
   const item=products[brand]?.[cat]?.[idx];
   if(!item) return;
   const oldName=item.n;
-  const renamed=newName!==oldName;
-  if(renamed && products[brand][cat].some((x,i)=>i!==idx && x.n.toLowerCase()===newName.toLowerCase())){
-    showAdminMsg('adminProdMsg','Ya existe un equipo con ese nombre en '+brand+' > '+cat+'.','error');
-    return;
+  const moved=(newBrand!==brand||newCat!==cat||newName!==oldName);
+  if(moved){
+    var target=(products[newBrand]&&products[newBrand][newCat])||[];
+    if(target.some(x=>x!==item && x.n.toLowerCase()===newName.toLowerCase())){
+      showAdminMsg('adminProdMsg','Ya existe "'+newName+'" en '+newBrand+' > '+newCat+'.','error');
+      return;
+    }
   }
 
   var file=(imgInput&&imgInput.files)?imgInput.files[0]:null;
   async function finishSave(imgData){
     try{
-      if(renamed){
-        /* Renombra en la base de datos (no crea un equipo nuevo) y actualiza cotizaciones guardadas */
-        await sbRpc('rename_product',{p_brand:brand,p_category:cat,p_old:oldName,p_new:newName});
-        var oldKey=uid(brand,cat,oldName), newKey=uid(brand,cat,newName);
+      if(moved){
+        /* Mueve/renombra el MISMO equipo en la base de datos y actualiza cotizaciones guardadas */
+        await sbRpc('move_product',{p_brand:brand,p_category:cat,p_name:oldName,p_new_brand:newBrand,p_new_category:newCat,p_new_name:newName});
+        var oldKey=uid(brand,cat,oldName), newKey=uid(newBrand,newCat,newName);
         if(pState[oldKey]){ pState[newKey]=pState[oldKey]; delete pState[oldKey]; }
+        /* Saca el equipo de su lista actual y lo pone al final de la nueva */
+        var arr=products[brand][cat];
+        arr.splice(arr.indexOf(item),1);
+        if(!arr.length) delete products[brand][cat];
+        if(!Object.keys(products[brand]).length) delete products[brand];
+        if(!products[newBrand]) products[newBrand]={};
+        if(!products[newBrand][newCat]) products[newBrand][newCat]=[];
         item.n=newName;
+        products[newBrand][newCat].push(item);
         loadQuotesFromSupabase();
       }
       item.p=p;
       if(imgData) item.img=imgData;
-      var key=uid(brand,cat,item.n);
+      var key=uid(newBrand,newCat,item.n);
       if(pState[key]) pState[key].price=p;
-      await saveProducts([{brand:brand,cat:cat,item:item}]);
+      await saveProducts([{brand:newBrand,cat:newCat,item:item}]);
+      if(moved){ try{ await persistOrder(); }catch(e){} }
       renderAdminProducts();
+      populateBrandDatalist();
       if(currentAdvisor) renderProducts();
-      showAdminMsg('adminProdMsg',`Producto actualizado: "${item.n}" — $${p} USD.`,'success');
+      showAdminMsg('adminProdMsg',`Producto actualizado: ${newBrand} > ${newCat} > "${item.n}" — $${p} USD.`,'success');
     }catch(e){
       showAdminMsg('adminProdMsg','No se pudo guardar: '+(e.message||e),'error');
     }
