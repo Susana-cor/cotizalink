@@ -678,7 +678,7 @@ input, select, textarea, button { font-size: 16px; } /* prevent iOS zoom on focu
       <div class="login-error" id="loginError"></div>
       <button type="button" class="login-btn" id="loginBtn" onclick="handleLogin()">Iniciar Sesión</button>
     </div>
-    <div class="login-footer">ICU Servicios · S.C.P V3 · v2026.10.14d</div>
+    <div class="login-footer">ICU Servicios · S.C.P V3 · v2026.10.14e</div>
   </div>
 </div>
 
@@ -1054,8 +1054,16 @@ input, select, textarea, button { font-size: 16px; } /* prevent iOS zoom on focu
     <div class="section-card">
       <div class="section-title">Agregar Nuevo Producto</div>
       <div class="admin-add-row">
-        <div class="form-group"><label>Marca</label><input type="text" id="apBrand" placeholder="Ej: VINNO" list="brandList"><datalist id="brandList"></datalist></div>
-        <div class="form-group"><label>Categoría</label><input type="text" id="apCat" placeholder="Ej: Ecógrafos" list="catList"><datalist id="catList"></datalist></div>
+        <div class="form-group"><label>Marca</label>
+          <select id="apBrandSel" onchange="renderAddProductSelects()"></select>
+          <input type="text" id="apBrandNew" placeholder="Nombre de la nueva marca" autocomplete="off" style="display:none;margin-top:6px">
+          <datalist id="brandList"></datalist>
+        </div>
+        <div class="form-group"><label>Categoría</label>
+          <select id="apCatSel" onchange="renderAddProductSelects()"></select>
+          <input type="text" id="apCatNew" placeholder="Nombre de la nueva categoría" autocomplete="off" style="display:none;margin-top:6px">
+          <datalist id="catList"></datalist>
+        </div>
         <div class="form-group"><label>Nombre Equipo</label><input type="text" id="apName" placeholder="Ej: R900"></div>
         <div class="form-group"><label>Precio USD</label><input type="number" id="apPrice" placeholder="Ej: 15000" min="0" step="1"></div>
         <div class="form-group"><label>Foto del Equipo</label><input type="file" id="apImg" accept="image/*" style="font-size:12px"></div>
@@ -4035,13 +4043,40 @@ function renderAdminProducts(){
 
   // Update category datalist
   const catDl=document.getElementById('catList');
-  const brandVal=document.getElementById('apBrand')?.value||'';
   const cats=new Set();
   for(const [b,categories] of Object.entries(products)){
     for(const c of Object.keys(categories)) cats.add(c);
   }
   catDl.innerHTML=[...cats].map(c=>`<option value="${esc(c)}">`).join('');
   renderRenameOptions();
+  renderAddProductSelects();
+}
+
+/* ══════════════════ ADMIN: NUEVA MARCA / CATEGORÍA AL AGREGAR ══════════════════ */
+var NEW_OPT='__new__';
+function renderAddProductSelects(){
+  var bSel=document.getElementById('apBrandSel'), cSel=document.getElementById('apCatSel');
+  var bNew=document.getElementById('apBrandNew'), cNew=document.getElementById('apCatNew');
+  if(!bSel||!cSel) return;
+  var prevB=bSel.value, prevC=cSel.value;
+  var brands=Object.keys(products);
+  bSel.innerHTML='<option value="">Seleccionar...</option>'+brands.map(function(b){return '<option value="'+esc(b)+'">'+esc(b)+'</option>';}).join('')+'<option value="'+NEW_OPT+'">+ Nueva marca…</option>';
+  if(prevB && (prevB===NEW_OPT || brands.indexOf(prevB)>=0)) bSel.value=prevB;
+  var isNewBrand=bSel.value===NEW_OPT;
+  bNew.style.display=isNewBrand?'':'none';
+  var cats=(!isNewBrand && bSel.value && products[bSel.value])?Object.keys(products[bSel.value]):[];
+  cSel.innerHTML=(cats.length?'<option value="">Seleccionar...</option>':'')+cats.map(function(c){return '<option value="'+esc(c)+'">'+esc(c)+'</option>';}).join('')+'<option value="'+NEW_OPT+'">+ Nueva categoría…</option>';
+  if(prevC && (prevC===NEW_OPT || cats.indexOf(prevC)>=0)) cSel.value=prevC;
+  if(!cats.length) cSel.value=NEW_OPT;
+  cNew.style.display=cSel.value===NEW_OPT?'':'none';
+}
+function getAddBrand(){
+  var s=document.getElementById('apBrandSel');
+  return (s.value===NEW_OPT?document.getElementById('apBrandNew').value:s.value).trim();
+}
+function getAddCat(){
+  var s=document.getElementById('apCatSel');
+  return (s.value===NEW_OPT?document.getElementById('apCatNew').value:s.value).trim();
 }
 
 /* ══════════════════ ADMIN: ORDEN DEL CATÁLOGO ══════════════════ */
@@ -4184,8 +4219,9 @@ function resizeImageFile(file,maxPx,cb){
 }
 
 function adminAddProduct(){
-  const brand=document.getElementById('apBrand').value.trim();
-  const cat=document.getElementById('apCat').value.trim();
+  const brand=getAddBrand();
+  const cat=getAddCat();
+  if((brand+cat).indexOf('|')>=0){ showAdminMsg('adminProdMsg','Marca y categoría no pueden contener el carácter |','error'); return; }
   const name=document.getElementById('apName').value.trim();
   const price=parseFloat(document.getElementById('apPrice').value);
   const imgInput=document.getElementById('apImg');
@@ -4210,6 +4246,10 @@ function adminAddProduct(){
     saveProducts([{brand:brand,cat:cat,item:prod}]).then(function(){ return persistOrder(); }).catch(function(){});
     renderAdminProducts();
     populateBrandDatalist();
+    document.getElementById('apBrandSel').value=brand; document.getElementById('apBrandNew').value='';
+    renderAddProductSelects();
+    document.getElementById('apCatSel').value=cat; document.getElementById('apCatNew').value='';
+    renderAddProductSelects();
     showAdminMsg('adminProdMsg',`Producto "${name}" agregado a ${brand} > ${cat}.`,'success');
     document.getElementById('apName').value='';
     document.getElementById('apPrice').value='';
