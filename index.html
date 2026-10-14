@@ -1063,6 +1063,22 @@ input, select, textarea, button { font-size: 16px; } /* prevent iOS zoom on focu
       </div>
     </div>
     <div class="section-card">
+      <div class="section-title">Renombrar Marca o Categoría</div>
+      <div class="admin-add-row">
+        <div class="form-group"><label>Qué renombrar</label>
+          <select id="rnKind" onchange="renderRenameOptions()">
+            <option value="category">Categoría</option>
+            <option value="brand">Marca</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Marca</label><select id="rnBrand" onchange="renderRenameOptions()"></select></div>
+        <div class="form-group" id="rnCatGroup"><label>Categoría actual</label><select id="rnCat"></select></div>
+        <div class="form-group"><label>Nombre nuevo</label><input type="text" id="rnNew" placeholder="Ej: Ecógrafos Portátiles" autocomplete="off"></div>
+        <div class="form-group" style="justify-content:flex-end"><button class="btn btn-sm" id="rnBtn" onclick="adminRenameCatalog()">Renombrar</button></div>
+      </div>
+      <p style="font-size:12px;color:var(--text-muted);margin:4px 0 0">Las cotizaciones guardadas se actualizan solas para seguir reconociendo sus equipos.</p>
+    </div>
+    <div class="section-card">
       <div class="section-title">Catálogo de Productos</div>
       <div class="search-bar" style="padding:0 0 10px">
         <input type="text" id="adminProdSearch" placeholder="Buscar producto..." oninput="renderAdminProducts()">
@@ -1299,6 +1315,16 @@ async function sbDelete(table,match){
     if(!r.ok) console.warn('SB DELETE:',table,r.status);
     sbOnline=true; return r.ok;
   }catch(e){console.warn('SB DELETE:',table,e);sbOnline=false;return false;}
+}
+async function sbRpc(fn,args){
+  var r=await fetch(SB_URL+'/rpc/'+fn,{method:'POST',headers:await sbHeaders(),body:JSON.stringify(args||{})});
+  var j=null; try{ j=await r.json(); }catch(e){}
+  if(!r.ok){
+    var msg=(j&&(j.message||j.hint))||('Error '+r.status);
+    if(r.status===404) msg='Falta instalar la función rename_catalog en Supabase (archivo paso_extra_renombrar.sql).';
+    throw new Error(msg);
+  }
+  return j;
 }
 /* Alta/edición/baja de usuarios: Edge Function "admin-users" (usa la llave secreta en el servidor, nunca en el navegador) */
 async function adminUsersFn(payload){
@@ -4002,6 +4028,68 @@ function renderAdminProducts(){
     for(const c of Object.keys(categories)) cats.add(c);
   }
   catDl.innerHTML=[...cats].map(c=>`<option value="${esc(c)}">`).join('');
+  renderRenameOptions();
+}
+
+/* ══════════════════ ADMIN: RENOMBRAR MARCA / CATEGORÍA ══════════════════ */
+function renderRenameOptions(){
+  var kindEl=document.getElementById('rnKind');
+  var brandEl=document.getElementById('rnBrand');
+  var catEl=document.getElementById('rnCat');
+  if(!kindEl||!brandEl||!catEl) return;
+  var kind=kindEl.value;
+  var brands=Object.keys(products).sort(function(a,b){return a.localeCompare(b);});
+  var prevBrand=brandEl.value;
+  brandEl.innerHTML=brands.map(function(b){return '<option value="'+esc(b)+'">'+esc(b)+'</option>';}).join('');
+  if(prevBrand && brands.indexOf(prevBrand)>=0) brandEl.value=prevBrand;
+  var cats=Object.keys(products[brandEl.value]||{}).sort(function(a,b){return a.localeCompare(b);});
+  var prevCat=catEl.value;
+  catEl.innerHTML=cats.map(function(c){return '<option value="'+esc(c)+'">'+esc(c)+' ('+products[brandEl.value][c].length+')</option>';}).join('');
+  if(prevCat && cats.indexOf(prevCat)>=0) catEl.value=prevCat;
+  var g=document.getElementById('rnCatGroup');
+  if(g) g.style.display=(kind==='brand')?'none':'';
+}
+
+async function adminRenameCatalog(){
+  var kind=document.getElementById('rnKind').value;
+  var brand=document.getElementById('rnBrand').value;
+  var cat=document.getElementById('rnCat').value;
+  var newName=(document.getElementById('rnNew').value||'').trim();
+  var oldName=kind==='brand'?brand:cat;
+  if(!brand||(kind==='category'&&!cat)){ showAdminMsg('adminProdMsg','Selecciona qué quieres renombrar.','error'); return; }
+  if(!newName){ showAdminMsg('adminProdMsg','Escribe el nombre nuevo.','error'); return; }
+  if(newName.indexOf('|')>=0){ showAdminMsg('adminProdMsg','El nombre no puede contener el carácter |','error'); return; }
+  if(newName===oldName){ showAdminMsg('adminProdMsg','El nombre nuevo es igual al actual.','error'); return; }
+  var label=kind==='brand'?('la marca "'+brand+'"'):('la categoría "'+cat+'" de '+brand);
+  var merge=kind==='brand'?!!products[newName]:!!(products[brand]&&products[brand][newName]);
+  var extra=merge?'\n\n"'+newName+'" ya existe: los equipos se juntarán en ella.':'';
+  if(!confirm('¿Renombrar '+label+' a "'+newName+'"?'+extra)) return;
+  var btn=document.getElementById('rnBtn'); if(btn){btn.disabled=true;btn.textContent='Renombrando...';}
+  try{
+    var res=await sbRpc('rename_catalog',{p_kind:kind,p_brand:brand,p_old:oldName,p_new:newName});
+    /* Mueve el estado de selección/descuentos en memoria a las nuevas claves */
+    var oldPrefix=kind==='brand'?(brand+'|'):(brand+'|'+cat+'|');
+    var newPrefix=kind==='brand'?(newName+'|'):(brand+'|'+newName+'|');
+    Object.keys(pState).forEach(function(k){
+      if(k.indexOf(oldPrefix)===0){ pState[newPrefix+k.slice(oldPrefix.length)]=pState[k]; delete pState[k]; }
+    });
+    if(kind==='brand' && openBrands[brand]!==undefined){ openBrands[newName]=openBrands[brand]; delete openBrands[brand]; }
+    await loadDataFromSupabase();
+    await loadQuotesFromSupabase();
+    renderAdminProducts();
+    populateBrandDatalist();
+    if(currentAdvisor) renderProducts();
+    if(kind==='brand') document.getElementById('rnBrand').value=newName;
+    else document.getElementById('rnCat').value=newName;
+    renderRenameOptions();
+    document.getElementById('rnNew').value='';
+    var nP=(res&&res.productos)||0, nI=(res&&res.partidas)||0;
+    showAdminMsg('adminProdMsg','Listo: "'+oldName+'" ahora es "'+newName+'" ('+nP+' equipos, '+nI+' partidas de cotizaciones actualizadas).','success');
+  }catch(e){
+    showAdminMsg('adminProdMsg','No se pudo renombrar: '+e.message,'error');
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent='Renombrar';}
+  }
 }
 
 function resizeImageFile(file,maxPx,cb){
