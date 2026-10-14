@@ -1321,7 +1321,7 @@ async function sbRpc(fn,args){
   var j=null; try{ j=await r.json(); }catch(e){}
   if(!r.ok){
     var msg=(j&&(j.message||j.hint))||('Error '+r.status);
-    if(r.status===404) msg='Falta instalar la función rename_catalog en Supabase (archivo paso_extra_renombrar.sql).';
+    if(r.status===404) msg='Falta instalar la función '+fn+' en Supabase (archivo paso_extra_'+(fn==='rename_product'?'renombrar_producto':'renombrar')+'.sql).';
     throw new Error(msg);
   }
   return j;
@@ -4182,17 +4182,38 @@ function adminSaveEdit(brand,cat,idx){
     showAdminMsg('adminProdMsg','Datos inválidos.','error');
     return;
   }
+  if(newName.indexOf('|')>=0){ showAdminMsg('adminProdMsg','El nombre no puede contener el carácter |','error'); return; }
   const item=products[brand]?.[cat]?.[idx];
   if(!item) return;
+  const oldName=item.n;
+  const renamed=newName!==oldName;
+  if(renamed && products[brand][cat].some((x,i)=>i!==idx && x.n.toLowerCase()===newName.toLowerCase())){
+    showAdminMsg('adminProdMsg','Ya existe un equipo con ese nombre en '+brand+' > '+cat+'.','error');
+    return;
+  }
 
   var file=(imgInput&&imgInput.files)?imgInput.files[0]:null;
-  function finishSave(imgData){
-    item.n=newName;
-    item.p=p;
-    if(imgData) item.img=imgData;
-    saveProducts();
-    renderAdminProducts();
-    showAdminMsg('adminProdMsg',`Producto actualizado: "${item.n}" — $${p} USD.`,'success');
+  async function finishSave(imgData){
+    try{
+      if(renamed){
+        /* Renombra en la base de datos (no crea un equipo nuevo) y actualiza cotizaciones guardadas */
+        await sbRpc('rename_product',{p_brand:brand,p_category:cat,p_old:oldName,p_new:newName});
+        var oldKey=uid(brand,cat,oldName), newKey=uid(brand,cat,newName);
+        if(pState[oldKey]){ pState[newKey]=pState[oldKey]; delete pState[oldKey]; }
+        item.n=newName;
+        loadQuotesFromSupabase();
+      }
+      item.p=p;
+      if(imgData) item.img=imgData;
+      var key=uid(brand,cat,item.n);
+      if(pState[key]) pState[key].price=p;
+      saveProducts();
+      renderAdminProducts();
+      if(currentAdvisor) renderProducts();
+      showAdminMsg('adminProdMsg',`Producto actualizado: "${item.n}" — $${p} USD.`,'success');
+    }catch(e){
+      showAdminMsg('adminProdMsg','No se pudo guardar: '+(e.message||e),'error');
+    }
   }
   if(file){
     resizeImageFile(file,120,function(data){finishSave(data);});
