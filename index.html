@@ -678,7 +678,7 @@ input, select, textarea, button { font-size: 16px; } /* prevent iOS zoom on focu
       <div class="login-error" id="loginError"></div>
       <button type="button" class="login-btn" id="loginBtn" onclick="handleLogin()">Iniciar Sesión</button>
     </div>
-    <div class="login-footer">ICU Servicios · S.C.P V3</div>
+    <div class="login-footer">ICU Servicios · S.C.P V3 · v2026.10.14c</div>
   </div>
 </div>
 
@@ -1063,7 +1063,7 @@ input, select, textarea, button { font-size: 16px; } /* prevent iOS zoom on focu
       </div>
     </div>
     <div class="section-card">
-      <div class="section-title">Renombrar Marca o Categoría</div>
+      <div class="section-title">Renombrar u Ordenar Marca / Categoría</div>
       <div class="admin-add-row">
         <div class="form-group"><label>Qué renombrar</label>
           <select id="rnKind" onchange="renderRenameOptions()">
@@ -1075,6 +1075,12 @@ input, select, textarea, button { font-size: 16px; } /* prevent iOS zoom on focu
         <div class="form-group" id="rnCatGroup"><label>Categoría actual</label><select id="rnCat"></select></div>
         <div class="form-group"><label>Nombre nuevo</label><input type="text" id="rnNew" placeholder="Ej: Ecógrafos Portátiles" autocomplete="off"></div>
         <div class="form-group" style="justify-content:flex-end"><button class="btn btn-sm" id="rnBtn" onclick="adminRenameCatalog()">Renombrar</button></div>
+        <div class="form-group" style="justify-content:flex-end"><label>Posición en la lista</label>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-sm btn-outline" onclick="adminMoveGroup(-1)">↑ Subir</button>
+            <button class="btn btn-sm btn-outline" onclick="adminMoveGroup(1)">↓ Bajar</button>
+          </div>
+        </div>
       </div>
       <p style="font-size:12px;color:var(--text-muted);margin:4px 0 0">Las cotizaciones guardadas se actualizan solas para seguir reconociendo sus equipos.</p>
     </div>
@@ -1669,7 +1675,8 @@ async function loadProfilesFromSupabase(){
 }
 async function loadDataFromSupabase(){
   if(canAdmin()) await loadProfilesFromSupabase();
-  var sbProds=await sbGet('products','&order=brand,category,name');
+  var sbProds=await sbGet('products','&order=sort_order.asc.nullslast,brand,category,name');
+  if(sbProds===null) sbProds=await sbGet('products','&order=brand,category,name');
   if(sbProds && sbProds.length){
     products={};
     sbProds.forEach(function(p){
@@ -1678,6 +1685,7 @@ async function loadDataFromSupabase(){
       if(!products[p.brand][p.category]) products[p.brand][p.category]=[];
       var item={n:p.name,p:parseFloat(p.price_usd)||0};
       if(p.image_base64) item.img=p.image_base64;
+      if(p.sort_order!==null && p.sort_order!==undefined) item.o=parseFloat(p.sort_order);
       products[p.brand][p.category].push(item);
     });
     try{localStorage.setItem(PRODUCTS_CACHE_KEY,JSON.stringify(products));}catch(e){}
@@ -1688,11 +1696,13 @@ async function loadDataFromSupabase(){
   }
   showSyncStatus(sbOnline);
 }
-function saveProducts(){
+/* Guarda en Supabase SOLO los equipos indicados ([{brand,cat,item}]).
+   Nunca re-sube el catálogo completo: así una pestaña vieja no puede "revivir" nombres anteriores. */
+function saveProducts(changed){
   try{localStorage.setItem(PRODUCTS_CACHE_KEY,JSON.stringify(products));}catch(e){}
-  if(!canAdmin()) return;
-  var batch=productsToRows(products);
-  if(batch.length) sbUpsert('products',batch).then(function(){showSyncStatus(sbOnline);});
+  if(!canAdmin()||!changed||!changed.length) return Promise.resolve();
+  var batch=changed.map(function(c){return {brand:c.brand,category:c.cat,name:c.item.n,price_usd:c.item.p,image_base64:c.item.img||''};});
+  return sbUpsert('products',batch).then(function(){showSyncStatus(sbOnline);});
 }
 
 loadData();
@@ -3024,6 +3034,7 @@ function uploadPriceList(){
       if(lines.length<2){plMsg('El archivo está vacío o no tiene datos.',true);return;}
       // Skip header
       let updated=0,added=0,errors=0;
+      const changed=[];
       for(let i=1;i<lines.length;i++){
         const cols=parseCSVLine(lines[i]);
         if(cols.length<4){errors++;continue;}
@@ -3032,10 +3043,10 @@ function uploadPriceList(){
         if(!products[brand]) products[brand]={};
         if(!products[brand][cat]) products[brand][cat]=[];
         const existing=products[brand][cat].find(x=>x.n.toLowerCase()===name.toLowerCase());
-        if(existing){existing.p=price;updated++;}
-        else{products[brand][cat].push({n:name,p:price});added++;}
+        if(existing){existing.p=price;updated++;changed.push({brand:brand,cat:cat,item:existing});}
+        else{const it={n:name,p:price};products[brand][cat].push(it);added++;changed.push({brand:brand,cat:cat,item:it});}
       }
-      saveProducts();
+      saveProducts(changed).then(function(){ if(added>0) return persistOrder(); }).catch(function(){});
       renderPriceList();
       renderAdminProducts();
       plMsg(`✓ Actualización completa: ${updated} precios actualizados, ${added} productos nuevos${errors>0?', '+errors+' filas con error':''}`,false);
@@ -4009,6 +4020,8 @@ function renderAdminProducts(){
           <td>${esc(brand)}</td><td>${esc(cat)}</td><td>${esc(item.n)}</td>
           <td style="font-family:'Space Grotesk';font-weight:600">${fmt(item.p)}</td>
           <td style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="btn btn-sm btn-outline" title="Subir" ${i===0?'disabled':''} onclick="adminMoveProduct('${esc(brand)}','${esc(cat)}',${i},-1)">↑</button>
+            <button class="btn btn-sm btn-outline" title="Bajar" ${i===items.length-1?'disabled':''} onclick="adminMoveProduct('${esc(brand)}','${esc(cat)}',${i},1)">↓</button>
             <button class="btn btn-sm btn-outline" onclick="adminStartEdit(this,'${esc(brand)}','${esc(cat)}',${i})">Editar</button>
             <button class="btn btn-sm btn-red" onclick="adminDeleteProduct('${esc(brand)}','${esc(cat)}',${i})">Eliminar</button>
           </td>
@@ -4031,6 +4044,64 @@ function renderAdminProducts(){
   renderRenameOptions();
 }
 
+/* ══════════════════ ADMIN: ORDEN DEL CATÁLOGO ══════════════════ */
+/* El orden se guarda en la columna products.sort_order (1, 2, 3… en el orden en que se ve la lista).
+   Solo se envían los equipos cuya posición cambió, y solo la columna sort_order. */
+var orderSaving=false;
+async function persistOrder(){
+  var n=0, changed=[];
+  Object.keys(products).forEach(function(b){
+    Object.keys(products[b]).forEach(function(c){
+      products[b][c].forEach(function(it){
+        n++;
+        if(it.o!==n){ it.o=n; changed.push({brand:b,category:c,name:it.n,sort_order:n}); }
+      });
+    });
+  });
+  try{localStorage.setItem(PRODUCTS_CACHE_KEY,JSON.stringify(products));}catch(e){}
+  renderAdminProducts();
+  populateBrandDatalist();
+  if(currentAdvisor) renderProducts();
+  if(!changed.length||!canAdmin()) return;
+  orderSaving=true;
+  try{
+    for(var i=0;i<changed.length;i+=200){
+      var res=await sbUpsert('products',changed.slice(i,i+200));
+      if(res===null) throw new Error('Supabase no aceptó el cambio. ¿Ya corriste paso_extra_orden.sql?');
+    }
+  }finally{ orderSaving=false; }
+}
+function adminMoveProduct(brand,cat,idx,dir){
+  var arr=products[brand]&&products[brand][cat];
+  var j=idx+dir;
+  if(!arr||j<0||j>=arr.length) return;
+  var tmp=arr[idx]; arr[idx]=arr[j]; arr[j]=tmp;
+  persistOrder().catch(function(e){ showAdminMsg('adminProdMsg','No se pudo guardar el orden: '+e.message,'error'); });
+}
+function moveKey(obj,key,dir){
+  var keys=Object.keys(obj), i=keys.indexOf(key), j=i+dir;
+  if(i<0||j<0||j>=keys.length) return null;
+  keys.splice(j,0,keys.splice(i,1)[0]);
+  var out={}; keys.forEach(function(k){ out[k]=obj[k]; });
+  return out;
+}
+function adminMoveGroup(dir){
+  var kind=document.getElementById('rnKind').value;
+  var brand=document.getElementById('rnBrand').value;
+  if(!brand) return;
+  if(kind==='brand'){
+    var nb=moveKey(products,brand,dir); if(!nb) return;
+    products=nb;
+  } else {
+    var cat=document.getElementById('rnCat').value; if(!cat) return;
+    var nc=moveKey(products[brand],cat,dir); if(!nc) return;
+    products[brand]=nc;
+  }
+  persistOrder().then(function(){
+    showAdminMsg('adminProdMsg','Orden actualizado.','success');
+  }).catch(function(e){ showAdminMsg('adminProdMsg','No se pudo guardar el orden: '+e.message,'error'); });
+}
+
 /* ══════════════════ ADMIN: RENOMBRAR MARCA / CATEGORÍA ══════════════════ */
 function renderRenameOptions(){
   var kindEl=document.getElementById('rnKind');
@@ -4038,11 +4109,11 @@ function renderRenameOptions(){
   var catEl=document.getElementById('rnCat');
   if(!kindEl||!brandEl||!catEl) return;
   var kind=kindEl.value;
-  var brands=Object.keys(products).sort(function(a,b){return a.localeCompare(b);});
+  var brands=Object.keys(products);
   var prevBrand=brandEl.value;
   brandEl.innerHTML=brands.map(function(b){return '<option value="'+esc(b)+'">'+esc(b)+'</option>';}).join('');
   if(prevBrand && brands.indexOf(prevBrand)>=0) brandEl.value=prevBrand;
-  var cats=Object.keys(products[brandEl.value]||{}).sort(function(a,b){return a.localeCompare(b);});
+  var cats=Object.keys(products[brandEl.value]||{});
   var prevCat=catEl.value;
   catEl.innerHTML=cats.map(function(c){return '<option value="'+esc(c)+'">'+esc(c)+' ('+products[brandEl.value][c].length+')</option>';}).join('');
   if(prevCat && cats.indexOf(prevCat)>=0) catEl.value=prevCat;
@@ -4136,7 +4207,7 @@ function adminAddProduct(){
     var prod={n:name,p:price};
     if(imgData) prod.img=imgData;
     products[brand][cat].push(prod);
-    saveProducts();
+    saveProducts([{brand:brand,cat:cat,item:prod}]).then(function(){ return persistOrder(); }).catch(function(){});
     renderAdminProducts();
     populateBrandDatalist();
     showAdminMsg('adminProdMsg',`Producto "${name}" agregado a ${brand} > ${cat}.`,'success');
@@ -4207,7 +4278,7 @@ function adminSaveEdit(brand,cat,idx){
       if(imgData) item.img=imgData;
       var key=uid(brand,cat,item.n);
       if(pState[key]) pState[key].price=p;
-      saveProducts();
+      await saveProducts([{brand:brand,cat:cat,item:item}]);
       renderAdminProducts();
       if(currentAdvisor) renderProducts();
       showAdminMsg('adminProdMsg',`Producto actualizado: "${item.n}" — $${p} USD.`,'success');
@@ -4230,7 +4301,7 @@ function adminDeleteProduct(brand,cat,idx){
   products[brand][cat].splice(idx,1);
   if(products[brand][cat].length===0) delete products[brand][cat];
   if(Object.keys(products[brand]).length===0) delete products[brand];
-  saveProducts();
+  saveProducts([]);
   renderAdminProducts();
   populateBrandDatalist();
   showAdminMsg('adminProdMsg',`Producto "${name}" eliminado.`,'success');
