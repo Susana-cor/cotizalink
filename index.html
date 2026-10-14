@@ -680,7 +680,7 @@ input, select, textarea, button { font-size: 16px; } /* prevent iOS zoom on focu
       <div class="login-error" id="loginError"></div>
       <button type="button" class="login-btn" id="loginBtn" onclick="handleLogin()">Iniciar Sesión</button>
     </div>
-    <div class="login-footer">ICU Servicios · S.C.P V3 · v2026.10.14g</div>
+    <div class="login-footer">ICU Servicios · S.C.P V3 · v2026.10.14h</div>
   </div>
 </div>
 
@@ -1314,9 +1314,9 @@ async function sbUpsert(table,data){
   try{
     var oc=UPSERT_KEYS[table]?'?on_conflict='+UPSERT_KEYS[table]:'';
     var r=await fetch(SB_URL+'/'+table+oc,{method:'POST',headers:await sbHeaders({'Prefer':'return=representation,resolution=merge-duplicates'}),body:JSON.stringify(data)});
-    if(!r.ok) throw new Error(r.status);
-    sbOnline=true; return await r.json();
-  }catch(e){console.warn('SB UPSERT:',table,e);sbOnline=false;return null;}
+    if(!r.ok){ var et=''; try{ var ej=await r.json(); et=ej.message||ej.hint||''; }catch(_){} window.sbLastError=r.status+(et?' — '+et:''); throw new Error(window.sbLastError); }
+    window.sbLastError=''; sbOnline=true; return await r.json();
+  }catch(e){console.warn('SB UPSERT:',table,e);if(!window.sbLastError) window.sbLastError=String(e.message||e);sbOnline=false;return null;}
 }
 async function sbPatch(table,match,data){
   try{
@@ -4104,7 +4104,10 @@ async function persistOrder(){
   try{
     for(var i=0;i<changed.length;i+=200){
       var res=await sbUpsert('products',changed.slice(i,i+200));
-      if(res===null) throw new Error('Supabase no aceptó el cambio. ¿Ya corriste paso_extra_orden.sql?');
+      if(res===null){
+        var le=window.sbLastError||'';
+        throw new Error(/sort_order/.test(le)?'Falta la columna sort_order en Supabase: corre paso_extra_orden.sql.':('Supabase no aceptó el cambio ('+le+').'));
+      }
     }
   }finally{ orderSaving=false; }
 }
@@ -4113,7 +4116,9 @@ function adminMoveProduct(brand,cat,idx,dir){
   var j=idx+dir;
   if(!arr||j<0||j>=arr.length) return;
   var tmp=arr[idx]; arr[idx]=arr[j]; arr[j]=tmp;
-  persistOrder().catch(function(e){ showAdminMsg('adminProdMsg','No se pudo guardar el orden: '+e.message,'error'); });
+  persistOrder().then(function(){
+    showAdminMsg('adminProdMsg','✓ Orden guardado.','success');
+  }).catch(function(e){ showAdminMsg('adminProdMsg','No se pudo guardar el orden: '+e.message,'error'); });
 }
 function moveKey(obj,key,dir){
   var keys=Object.keys(obj), i=keys.indexOf(key), j=i+dir;
@@ -4135,7 +4140,7 @@ function adminMoveGroup(dir){
     products[brand]=nc;
   }
   persistOrder().then(function(){
-    showAdminMsg('adminProdMsg','Orden actualizado.','success');
+    showAdminMsg('adminProdMsg','✓ Orden guardado.','success');
   }).catch(function(e){ showAdminMsg('adminProdMsg','No se pudo guardar el orden: '+e.message,'error'); });
 }
 
