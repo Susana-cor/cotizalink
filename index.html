@@ -680,7 +680,7 @@ input, select, textarea, button { font-size: 16px; } /* prevent iOS zoom on focu
       <div class="login-error" id="loginError"></div>
       <button type="button" class="login-btn" id="loginBtn" onclick="handleLogin()">Iniciar Sesión</button>
     </div>
-    <div class="login-footer">ICU Servicios · S.C.P V3 · v2026.10.14h</div>
+    <div class="login-footer">ICU Servicios · S.C.P V3 · v2026.10.19a</div>
   </div>
 </div>
 
@@ -3105,10 +3105,11 @@ function buildBarChart(data, maxVal, colorIdx){
   return html;
 }
 
-function renderDashboard(){
+function renderDashboardCore(P){
+  var $id=function(id){ return document.getElementById(P ? P+id.charAt(0).toUpperCase()+id.slice(1) : id); };
   populateAdvisorFilters();
-  var quotes=filterQuotesByAdvisor(filterQuotesByDateConsul(loadQuotes()),'consulAdvisorFilter');
-  var search=(document.getElementById('consulQuoteSearch')?.value||'').toLowerCase();
+  var quotes=P ? filterQuotesByAdvisor(filterQuotesByDate(loadQuotes()),'advAdvisorFilter') : filterQuotesByAdvisor(filterQuotesByDateConsul(loadQuotes()),'consulAdvisorFilter');
+  var search=($id('consulQuoteSearch')?.value||'').toLowerCase();
   // ── Summary Cards ──
   var totalQ=quotes.length;
   var totalMXN=0, totalUSD=0;
@@ -3122,7 +3123,7 @@ function renderDashboard(){
     userMap[u].totalMXN+=(q.totalMXN||0);
   });
   var activeUsers=Object.keys(userMap).length;
-  var dc=document.getElementById('dashCards');
+  var dc=$id('dashCards');
   dc.innerHTML=
     '<div class="dash-card"><div class="dash-label">Total Cotizaciones</div><div class="dash-value" style="color:var(--consul-accent)">'+totalQ+'</div></div>'+
     '<div class="dash-card"><div class="dash-label">Total MXN</div><div class="dash-value" style="color:var(--accent)">'+fmt(totalMXN)+'</div></div>'+
@@ -3131,7 +3132,7 @@ function renderDashboard(){
 
   // ── Per-user ──
   var users=Object.values(userMap).sort(function(a,b){return b.count-a.count;});
-  var du=document.getElementById('dashUsers');
+  var du=$id('dashUsers');
   var uhtml='';
   users.forEach(function(u,i){
     var color=AVATAR_COLORS[i%AVATAR_COLORS.length];
@@ -3154,7 +3155,7 @@ function renderDashboard(){
   var stateData=Object.keys(stateMap).map(function(k){return {label:k,count:stateMap[k].count,value:stateMap[k].total,display:fmt(stateMap[k].total)};});
   stateData.sort(function(a,b){return b.value-a.value;});
   var stateMax=stateData.length?stateData[0].value:0;
-  var dsEl=document.getElementById('dashByState');
+  var dsEl=$id('dashByState');
   if(dsEl) dsEl.innerHTML=buildBarChart(stateData,stateMax,0);
 
   // ── By Método de Pago ──
@@ -3169,7 +3170,7 @@ function renderDashboard(){
   var payData=Object.keys(payMap).map(function(k){return {label:k,count:payMap[k].count,value:payMap[k].total,display:fmt(payMap[k].total)};});
   payData.sort(function(a,b){return b.value-a.value;});
   var payMax=payData.length?payData[0].value:0;
-  var dpEl=document.getElementById('dashByPayment');
+  var dpEl=$id('dashByPayment');
   if(dpEl) dpEl.innerHTML=buildBarChart(payData,payMax,3);
 
   // ── By Envío ──
@@ -3182,7 +3183,7 @@ function renderDashboard(){
   var shipData=Object.keys(shipMap).map(function(k){return {label:k,count:shipMap[k].count,value:shipMap[k].total,display:fmt(shipMap[k].total)};});
   shipData.sort(function(a,b){return b.value-a.value;});
   var shipMax=shipData.length?shipData[0].value:0;
-  var dshEl=document.getElementById('dashByShipping');
+  var dshEl=$id('dashByShipping');
   if(dshEl) dshEl.innerHTML=buildBarChart(shipData,shipMax,5);
 
   // ── Equipos con Descuento ──
@@ -3208,7 +3209,7 @@ function renderDashboard(){
       }
     });
   });
-  var ddEl=document.getElementById('dashByDiscount');
+  var ddEl=$id('dashByDiscount');
   if(ddEl){
     if(!discItems.length){
       ddEl.innerHTML='<div style="text-align:center;color:var(--text-muted);padding:12px;font-size:13px">No hay equipos con descuento aplicado.</div>';
@@ -3246,11 +3247,11 @@ function renderDashboard(){
   var catData=Object.keys(catMap).map(function(k){return {label:k,count:catMap[k].count,value:catMap[k].total,display:fmt(catMap[k].total)};});
   catData.sort(function(a,b){return b.value-a.value;});
   var catMax=catData.length?catData[0].value:0;
-  var dcEl=document.getElementById('dashByCategory');
+  var dcEl=$id('dashByCategory');
   if(dcEl) dcEl.innerHTML=buildBarChart(catData,catMax,6);
 
   // ── Gráfica Tipo de Cambio ──
-  var rateEl=document.getElementById('dashRateChart');
+  var rateEl=$id('dashRateChart');
   if(rateEl){
     var rateQuotes=quotes.filter(function(q){return q.rate>0 && q.date;});
     rateQuotes.sort(function(a,b){return (a.date||'').localeCompare(b.date||'');});
@@ -3337,7 +3338,7 @@ function renderDashboard(){
   });
   var equipData=Object.keys(equipMap).map(function(k){return {label:k,count:equipMap[k].count,value:equipMap[k].total,display:fmt(equipMap[k].total)};});
   equipData.sort(function(a,b){return b.count-a.count;});
-  var deEl=document.getElementById('dashByEquipment');
+  var deEl=$id('dashByEquipment');
   if(deEl){
     if(!equipData.length){
       deEl.innerHTML='<div style="text-align:center;color:var(--text-muted);padding:12px;font-size:13px">Sin datos de equipos.</div>';
@@ -3359,7 +3360,7 @@ function renderDashboard(){
     });
   }
   filtered.sort(function(a,b){return (b.savedAt||'').localeCompare(a.savedAt||'');});
-  var qt=document.getElementById('consulQuotesTable');
+  var qt=$id('consulQuotesTable');
   var qhtml='<thead><tr><th>Ref</th><th>Fecha</th><th>Asesor</th><th>Médico</th><th>Estado</th><th>#Prod</th><th>Total USD</th><th>Total MXN</th><th>T.C.</th><th>Pago</th><th>Guardado</th></tr></thead><tbody>';
   if(!filtered.length){
     qhtml+='<tr><td colspan="11" style="text-align:center;color:var(--text-muted);padding:20px">No hay cotizaciones.</td></tr>';
@@ -3382,6 +3383,8 @@ function renderDashboard(){
   qhtml+='</tbody>';
   qt.innerHTML=qhtml;
 }
+
+function renderDashboard(){ renderDashboardCore(''); }
 
 /* ══════════════════ ADVISOR FILTER (populate selects) ══════════════════ */
 function populateAdvisorFilters(){
@@ -3480,101 +3483,7 @@ function filterQuotesByDate(quotes){
   });
 }
 
-function renderAdvDashboard(){
-  // Reuse renderDashboard logic but target adv* elements
-  populateAdvisorFilters();
-  var quotes=filterQuotesByAdvisor(filterQuotesByDate(loadQuotes()),'advAdvisorFilter');
-  var search=(document.getElementById('advConsulQuoteSearch')?.value||'').toLowerCase();
-  var totalQ=quotes.length;
-  var totalMXN=0,totalUSD=0,uniqueDocs={};
-  quotes.forEach(function(q){totalMXN+=(q.totalMXN||0);totalUSD+=(q.totalUSD||0);if(q.doctor)uniqueDocs[q.doctor.toLowerCase()]=1;});
-  var avgMXN=totalQ?totalMXN/totalQ:0;
-  var cardsHtml='<div class="dash-card"><div class="dash-card-label">Total Cotizaciones</div><div class="dash-card-value">'+totalQ+'</div></div>';
-  cardsHtml+='<div class="dash-card"><div class="dash-card-label">Total MXN</div><div class="dash-card-value" style="color:var(--accent)">'+fmt(totalMXN)+'</div></div>';
-  cardsHtml+='<div class="dash-card"><div class="dash-card-label">Total USD</div><div class="dash-card-value">'+fmt(totalUSD)+'</div></div>';
-  cardsHtml+='<div class="dash-card"><div class="dash-card-label">Promedio MXN</div><div class="dash-card-value">'+fmt(avgMXN)+'</div></div>';
-  cardsHtml+='<div class="dash-card"><div class="dash-card-label">Doctores Únicos</div><div class="dash-card-value">'+Object.keys(uniqueDocs).length+'</div></div>';
-  document.getElementById('advDashCards').innerHTML=cardsHtml;
-
-  // Users summary
-  var byUser={};
-  quotes.forEach(function(q){var a=q.advisor||'Desconocido';if(!byUser[a])byUser[a]={count:0,total:0};byUser[a].count++;byUser[a].total+=(q.totalMXN||0);});
-  var uhtml='<table class="history-table"><thead><tr><th>Asesor</th><th>Cotizaciones</th><th>Total MXN</th><th>Promedio</th></tr></thead><tbody>';
-  for(var u in byUser){
-    var d=byUser[u];
-    uhtml+='<tr><td style="font-weight:600">'+esc(u)+'</td><td>'+d.count+'</td><td style="font-family:Space Grotesk;font-weight:700">'+fmt(d.total)+'</td><td>'+fmt(d.count?d.total/d.count:0)+'</td></tr>';
-  }
-  uhtml+='</tbody></table>';
-  document.getElementById('advDashUsers').innerHTML=uhtml;
-
-  // Analytics
-  var bySt={},byPay={},byShip={},byCat={},byEq={},byDisc=[];
-  quotes.forEach(function(q){
-    var st=q.state||'Sin estado';bySt[st]=(bySt[st]||0)+1;
-    var pay=q.payment||'Sin método';byPay[pay]=(byPay[pay]||0)+1;
-    var sh=q.shipping||'Sin envío';byShip[sh]=(byShip[sh]||0)+1;
-    if(q.items){q.items.forEach(function(it){
-      var parts=it.id.split('|');
-      var cat=(parts[1]||'Otro');byCat[cat]=(byCat[cat]||0)+1;
-      var eq=(parts[2]||it.id);byEq[eq]=(byEq[eq]||0)+1;
-      if(it.discount>0||it.discountMXN>0) byDisc.push({name:eq,disc:it.discount||0,discMXN:it.discountMXN||0});
-    });}
-  });
-  document.getElementById('advDashByState').innerHTML=renderBarChart(bySt);
-  document.getElementById('advDashByPayment').innerHTML=renderBarChart(byPay);
-  document.getElementById('advDashByShipping').innerHTML=renderBarChart(byShip);
-  document.getElementById('advDashByCategory').innerHTML=renderBarChart(byCat);
-  document.getElementById('advDashByEquipment').innerHTML=renderBarChart(byEq);
-
-  // Discount table
-  var dhtml='';
-  if(byDisc.length){
-    dhtml='<table class="history-table"><thead><tr><th>Equipo</th><th>Desc USD%</th><th>Desc MXN</th></tr></thead><tbody>';
-    byDisc.forEach(function(d){dhtml+='<tr><td>'+esc(d.name)+'</td><td>'+d.disc+'%</td><td>$'+d.discMXN.toLocaleString()+'</td></tr>';});
-    dhtml+='</tbody></table>';
-  } else { dhtml='<p style="color:var(--muted);font-size:13px">Sin descuentos aplicados.</p>'; }
-  document.getElementById('advDashByDiscount').innerHTML=dhtml;
-
-  // Rate chart — simplified
-  var rates=[],dates=[];
-  quotes.forEach(function(q){if(q.rate){rates.push(q.rate);dates.push(q.date||'');}});
-  var rhtml='';
-  if(rates.length>=2){
-    var minR=Math.min.apply(null,rates),maxR=Math.max.apply(null,rates);
-    var avgR=rates.reduce(function(a,b){return a+b;},0)/rates.length;
-    rhtml='<p style="font-size:13px;color:var(--muted)">Rango: '+minR.toFixed(2)+' – '+maxR.toFixed(2)+' | Promedio: '+avgR.toFixed(2)+' ('+rates.length+' cotizaciones)</p>';
-  } else { rhtml='<p style="color:var(--muted);font-size:13px">Se necesitan al menos 2 cotizaciones para el gráfico.</p>'; }
-  document.getElementById('advDashRateChart').innerHTML=rhtml;
-
-  // Quotes table
-  var filtered=quotes.slice();
-  if(search){filtered=filtered.filter(function(q){
-    return (q.ref||'').toLowerCase().includes(search)||(q.advisor||'').toLowerCase().includes(search)||(q.doctor||'').toLowerCase().includes(search);
-  });}
-  filtered.sort(function(a,b){return (b.savedAt||'').localeCompare(a.savedAt||'');});
-  var qt=document.getElementById('advConsulQuotesTable');
-  var qhtml='<thead><tr><th>Ref</th><th>Fecha</th><th>Asesor</th><th>Médico</th><th>Estado</th><th>#Prod</th><th>Total USD</th><th>Total MXN</th><th>T.C.</th><th>Pago</th><th>Guardado</th></tr></thead><tbody>';
-  if(!filtered.length){
-    qhtml+='<tr><td colspan="11" style="text-align:center;color:var(--text-muted);padding:20px">No hay cotizaciones.</td></tr>';
-  } else {
-    filtered.forEach(function(q){
-      var saved=q.savedAt?new Date(q.savedAt).toLocaleString('es-MX',{dateStyle:'short',timeStyle:'short'}):'—';
-      var nItems=q.items?q.items.length:0;
-      var payLabel=(q.payment||'—').charAt(0).toUpperCase()+(q.payment||'—').slice(1);
-      qhtml+='<tr><td style="font-weight:600">'+esc(q.ref)+'</td><td>'+esc(q.date||'')+'</td>';
-      qhtml+='<td>'+esc(q.advisor||'')+'</td><td>'+esc(q.doctor||'')+'</td>';
-      qhtml+='<td>'+esc(q.state||'—')+'</td>';
-      qhtml+='<td style="text-align:center">'+nItems+'</td>';
-      qhtml+='<td style="font-family:Space Grotesk;font-weight:600">'+fmt(q.totalUSD||0)+'</td>';
-      qhtml+='<td style="font-family:Space Grotesk;font-weight:700;color:var(--accent)">'+fmt(q.totalMXN||0)+'</td>';
-      qhtml+='<td style="font-family:Space Grotesk;font-size:12px">'+(q.rate?q.rate.toFixed(2):'—')+'</td>';
-      qhtml+='<td style="font-size:12px">'+esc(payLabel)+'</td>';
-      qhtml+='<td style="font-size:12px;color:var(--text-muted)">'+saved+'</td></tr>';
-    });
-  }
-  qhtml+='</tbody>';
-  qt.innerHTML=qhtml;
-}
+function renderAdvDashboard(){ renderDashboardCore('adv'); }
 
 /* ══════════════════ PDF CONFIG ══════════════════ */
 var DEFAULT_PDF_SECTIONS=[
