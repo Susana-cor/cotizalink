@@ -680,7 +680,7 @@ input, select, textarea, button { font-size: 16px; } /* prevent iOS zoom on focu
       <div class="login-error" id="loginError"></div>
       <button type="button" class="login-btn" id="loginBtn" onclick="handleLogin()">Iniciar Sesión</button>
     </div>
-    <div class="login-footer">ICU Servicios · S.C.P V3 · v2026.10.19a</div>
+    <div class="login-footer">ICU Servicios · S.C.P V3 · v2026.10.21c</div>
   </div>
 </div>
 
@@ -2041,14 +2041,18 @@ function onPaymentChange(){
 }
 
 /* ══════════════════ FINANCING ══════════════════ */
-function recalcFinancing(){
-  const grandTotal=getFinalTotal();
+function calcFinancing(grandTotal){
   const months=parseInt(document.getElementById('fMonths').value)||1;
   let totalFin=grandTotal;
   if(months>=4) totalFin=grandTotal*(1+months*0.01);
   const downPct=parseFloat(document.getElementById('fDownPct').value)||0;
   const downPay=totalFin*downPct/100;
   const monthly=months>0?(totalFin-downPay)/months:0;
+  return {months,totalFin,downPct,downPay,monthly};
+}
+function recalcFinancing(){
+  const fc=calcFinancing(getFinalTotal());
+  const totalFin=fc.totalFin, downPay=fc.downPay, monthly=fc.monthly;
   document.getElementById('fTotalFinanced').value=fmt(totalFin);
   document.getElementById('fDownPayment').value=fmt(downPay);
   document.getElementById('fMonthlyPayment').value=fmt(monthly);
@@ -2076,10 +2080,10 @@ function renderProducts(){
       for(const item of filtered){
         const id=uid(brand,cat,item.n);
         if(!pState[id]) pState[id]={price:item.p,selected:false,discount:0,discountMXN:0};
-        const s=pState[id], rate=getRate(), mxn=item.p*rate*1.16;
+        const s=pState[id], rate=getRate(), mxn=item.p*rate;
         const disc=parseFloat(s.discount)||0;
         const dMXN=parseFloat(s.discountMXN)||0;
-        const fMXN=item.p*(1-disc/100)*rate*1.16 - dMXN;
+        const fMXN=item.p*(1-disc/100)*rate - dMXN;
         const pImg=item.img?`<img src="${item.img}" class="thumb-xs">`:'';
         const idEsc=id.replace(/'/g,"\\'");
         tableHtml+=`<tr data-id="${esc(id)}" class="${s.selected?'selected':''}">
@@ -2161,15 +2165,19 @@ function updateRow(id){
   const s=pState[id]; if(!s)return;
   const rate=getRate(), disc=parseFloat(s.discount)||0;
   const dMXN=parseFloat(s.discountMXN)||0;
-  const fMXN=s.price*(1-disc/100)*rate*1.16 - dMXN;
+  const fMXN=s.price*(1-disc/100)*rate - dMXN;
   row.classList.toggle('selected',s.selected);
-  row.querySelector('.mxn-cell').textContent=fmt(s.price*rate*1.16);
+  row.querySelector('.mxn-cell').textContent=fmt(s.price*rate);
   row.querySelector('.final-mxn-cell').textContent=fmt(fMXN);
 }
 function updateAllRows(){ for(const id of Object.keys(pState)) updateRow(id); recalcSummary(); }
 
 /* ══════════════════ SUMMARY ══════════════════ */
-function getSubtotals(){
+/* Ningún importe lleva IVA: pesos = USD × tipo de cambio (app y PDF). Los textos que mencionan IVA se conservan.
+   Para volver a sumar IVA al PDF, cambiar IVA_FACTOR a 1.16. */
+const IVA_FACTOR=1;
+function getSubtotals(f){
+  f=f||1;
   let count=0,subUSD=0,totalDiscMXN=0;
   const rate=getRate();
   for(const [id,s] of Object.entries(pState)){
@@ -2178,11 +2186,11 @@ function getSubtotals(){
     subUSD+=s.price*(1-disc/100);
     totalDiscMXN+=parseFloat(s.discountMXN)||0;
   }
-  const subMXN=subUSD*rate*1.16 - totalDiscMXN;
-  const envio=document.getElementById('fShipping').value==='no'?(parseFloat(document.getElementById('fShippingCost').value)||0):0;
+  const subMXN=(subUSD*rate - totalDiscMXN)*f;
+  const envio=(document.getElementById('fShipping').value==='no'?(parseFloat(document.getElementById('fShippingCost').value)||0):0)*f;
   const grandTotal=subMXN+envio;
   const globalDisc=parseFloat(document.getElementById('globalDiscount').value)||0;
-  const globalDiscMXN=parseFloat(document.getElementById('globalDiscountMXN').value)||0;
+  const globalDiscMXN=(parseFloat(document.getElementById('globalDiscountMXN').value)||0)*f;
   const finalTotal=grandTotal*(1-globalDisc/100) - globalDiscMXN;
   return {count,subUSD,subMXN,envio,grandTotal,globalDisc,globalDiscMXN,finalTotal};
 }
@@ -2279,7 +2287,7 @@ async function generatePDF(){
   const payMethod=document.getElementById('fPayment').value;
   const eqDet=document.getElementById('fEquipDetails').value;
   const cond=document.getElementById('fConditions').value;
-  const t=getSubtotals();
+  const t=getSubtotals(IVA_FACTOR);
 
   /* ---- Brand colors ---- */
   var brandDark=[26,107,138]; /* #1a6b8a Ocean Medic dark teal */
@@ -2361,8 +2369,8 @@ async function generatePDF(){
     const disc=parseFloat(s.discount)||0;
     const dMXN=parseFloat(s.discountMXN)||0;
     const priceUSD=s.price;
-    const priceMXN=s.price*rate*1.16;
-    const finalMXN=s.price*(1-disc/100)*rate*1.16 - dMXN;
+    const priceMXN=s.price*rate*IVA_FACTOR;
+    const finalMXN=(s.price*(1-disc/100)*rate - dMXN)*IVA_FACTOR;
     const discountAmount=priceMXN-finalMXN;
     if(disc>0||dMXN>0) hasAnyDiscount=true;
     var pImg=null;
@@ -2383,7 +2391,7 @@ async function generatePDF(){
       tBody=selProducts.map(function(p){
         var descStr='—';
         if(p.disc>0) descStr=p.disc+'%';
-        else if(p.dMXN>0) descStr=fmt(p.dMXN);
+        else if(p.dMXN>0) descStr=fmt(p.dMXN*IVA_FACTOR);
         return ['',p.brand,p.name,fmt(p.priceMXN),descStr,fmt(p.finalMXN)];
       });
       tColStyles={0:{cellWidth:18},1:{cellWidth:26},3:{halign:'right'},4:{halign:'center'},5:{halign:'right'}};
@@ -2454,12 +2462,13 @@ async function generatePDF(){
 
   if(payMethod==='financiado'||payMethod==='arrendamiento'){
     y=checkPage(y,30);
+    var pdfFin=calcFinancing(t.finalTotal);
     var finRows=[
-      ['Meses',document.getElementById('fMonths').value],
-      ['Total Financiado',document.getElementById('fTotalFinanced').value],
+      ['Meses',String(pdfFin.months)],
+      ['Total Financiado',fmt(pdfFin.totalFin)],
       ['Enganche',document.getElementById('fDownPct').value+'%'],
-      ['Pago Inicial',document.getElementById('fDownPayment').value],
-      ['Mensualidades',document.getElementById('fMonthlyPayment').value]
+      ['Pago Inicial',fmt(pdfFin.downPay)],
+      ['Mensualidades',fmt(pdfFin.monthly)]
     ];
     doc.autoTable({
       startY:y, margin:{left:lm,right:pw/2}, theme:'plain',
@@ -2950,14 +2959,11 @@ function loadQuoteIntoForm(qid){
     });
   }
   renderProducts();
-  // Switch to new quote tab
-  var tabs=document.querySelectorAll('.nav-item');
-  var panels=document.querySelectorAll('.cotiz-panel');
-  tabs.forEach(function(t){t.classList.remove('active');});
-  panels.forEach(function(p){p.classList.remove('active');});
-  if(tabs[0]) tabs[0].classList.add('active');
-  var np=document.getElementById('cotizNew');
-  if(np) np.classList.add('active');
+  // Ir a Nueva Cotización, paso 1, para empezar a editar
+  var firstNav=document.querySelector('#mainNav .nav-item');
+  switchNav('navNewQuote', firstNav);
+  goWizardStep(1);
+  recalcSummary();
   alert_inline('Cotización '+q.ref+' cargada para editar');
 }
 
