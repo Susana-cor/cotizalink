@@ -2461,7 +2461,7 @@ async function generatePDF(){
   var payLabel=payMethod?payMethod.charAt(0).toUpperCase()+payMethod.slice(1):'N/A';
   doc.text(payLabel,lm,y); y+=6;
 
-  if(payMethod==='financiado'||payMethod==='arrendamiento'){
+  if(payMethod==='financiado'){
     y=checkPage(y,30);
     var pdfFin=calcFinancing(t.finalTotal);
     var finRows=[
